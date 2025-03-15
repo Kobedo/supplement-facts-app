@@ -1,0 +1,28 @@
+{
+  "name": "supplement-facts-app",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js",
+    "dev": "cd client && npm run dev",
+    "build": "cd client && npm run build"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Kobedo/supplement-facts-app.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Kobedo/supplement-facts-app/issues"
+  },
+  "homepage": "https://github.com/Kobedo/supplement-facts-app#readme",
+  "description": "",
+  "dependencies": {
+    "express": "^4.21.2",
+    "msal-node": "^0.0.1-security",
+    "sqlite3": "^5.1.7"
+  }
+}
