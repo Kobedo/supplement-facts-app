@@ -4,13 +4,11 @@ const path = require('path');
 const app = express();
 const port = process.env.PORT || 3000;
 
-// SQLite setup
 const db = new sqlite3.Database(path.join(__dirname, 'data', 'supplement.db'), (err) => {
   if (err) console.error('DB Error:', err);
   else console.log('Connected to SQLite');
 });
 
-// Middleware
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'client', 'dist')));
 
@@ -19,47 +17,72 @@ db.serialize(() => {
   db.run(`
     CREATE TABLE IF NOT EXISTS ingredients (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      panel_name TEXT NOT NULL,
+      ingredient TEXT NOT NULL,
       parent_id INTEGER,
       unit TEXT,
       rdi REAL,
-      symbol TEXT,
       is_daily_value BOOLEAN,
       FOREIGN KEY (parent_id) REFERENCES ingredients(id)
     )
   `);
-  db.run(`
-    CREATE TABLE IF NOT EXISTS panels (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      sku TEXT UNIQUE NOT NULL,
-      json_data TEXT NOT NULL
-    )
-  `);
+
+  // Migrate to remove symbol if it exists
+  db.all(`PRAGMA table_info(ingredients)`, (err, columns) => {
+    if (err) return console.error('PRAGMA Error:', err);
+    if (columns.some(col => col.name === 'symbol')) {
+      console.log('Migrating ingredients table to remove symbol...');
+      db.run(`CREATE TABLE ingredients_temp (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ingredient TEXT NOT NULL,
+        parent_id INTEGER,
+        unit TEXT,
+        rdi REAL,
+        is_daily_value BOOLEAN,
+        FOREIGN KEY (parent_id) REFERENCES ingredients_temp(id)
+      )`);
+      db.run(`INSERT INTO ingredients_temp (id, ingredient, parent_id, unit, rdi, is_daily_value)
+              SELECT id, ingredient, parent_id, unit, rdi, is_daily_value FROM ingredients`);
+      db.run(`DROP TABLE ingredients`);
+      db.run(`ALTER TABLE ingredients_temp RENAME TO ingredients`);
+      console.log('Migration complete');
+    }
+  });
+
+  db.run(`CREATE TABLE IF NOT EXISTS panels (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sku TEXT UNIQUE NOT NULL,
+    json_data TEXT NOT NULL
+  )`);
   db.run(`CREATE TABLE IF NOT EXISTS allergens (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL)`);
   db.run(`CREATE TABLE IF NOT EXISTS manufacturers (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, address TEXT)`);
   db.run(`CREATE TABLE IF NOT EXISTS distributors (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, address TEXT)`);
+  db.run(`CREATE TABLE IF NOT EXISTS settings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    key TEXT UNIQUE NOT NULL,
+    value TEXT NOT NULL
+  )`);
 });
 
-// Seed initial data (runs only if tables are empty)
+// Seed initial data
 db.get('SELECT COUNT(*) as count FROM ingredients', (err, row) => {
   if (err) console.error('Seed Error:', err);
   else if (row.count === 0) {
     db.serialize(() => {
-      db.run(`INSERT INTO ingredients (name, panel_name, parent_id, unit, rdi, symbol, is_daily_value) VALUES
-        ('Protein', 'Protein', NULL, 'g', 50, '*', 1),
-        ('Fats', 'Total Fat', NULL, 'g', 78, '*', 1),
-        ('Saturated Fat', 'Saturated Fat', 2, 'g', 20, '*', 1),
-        ('Trans Fat', 'Trans Fat', 2, 'g', NULL, '†', 1),
-        ('Vitamin D', 'Vitamin D', NULL, 'mcg', 20, '*', 1),
-        ('L-Carnitine', 'L-Carnitine', NULL, 'mg', NULL, '†', 0),
-        ('Energy Blend', 'Energy Blend', NULL, 'mg', NULL, '†', 0),
-        ('Caffeine', 'Caffeine', 7, 'mg', NULL, '†', 0)`);
+      db.run(`INSERT INTO ingredients (ingredient, parent_id, unit, rdi, is_daily_value) VALUES
+        ('Protein', NULL, 'g', 50, 1),
+        ('Total Fat', NULL, 'g', 78, 1),
+        ('Saturated Fat', 2, 'g', 20, 1),
+        ('Trans Fat', 2, 'g', NULL, 1),
+        ('Vitamin D', NULL, 'mcg', 20, 1),
+        ('L-Carnitine', NULL, 'mg', NULL, 0),
+        ('Energy Blend', NULL, 'mg', NULL, 0),
+        ('Caffeine', 7, 'mg', NULL, 0)`);
       db.run(`INSERT INTO allergens (name) VALUES ('Milk'), ('Eggs'), ('Fish'), ('Shellfish'), ('Tree Nuts'), ('Peanuts'), ('Wheat'), ('Soy')`);
       db.run(`INSERT INTO manufacturers (name, address) VALUES ('NutriCorp', '123 Health St, Wellness City, CA 90210')`);
       db.run(`INSERT INTO distributors (name, address) VALUES ('FitDist', '456 Energy Rd, Fitness Town, NY 10001')`);
+      db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('dailyValueSymbol', '*'), ('nonDailyValueSymbol', '†')`);
+      console.log('Seeded initial data');
     });
-    console.log('Seeded initial data');
   }
 });
 
@@ -72,10 +95,10 @@ app.get('/api/ingredients', (req, res) => {
 });
 
 app.post('/api/ingredients', (req, res) => {
-  const { name, panel_name, parent_id, unit, rdi, symbol, is_daily_value } = req.body;
+  const { ingredient, parent_id, unit, rdi, is_daily_value } = req.body;
   db.run(
-    'INSERT INTO ingredients (name, panel_name, parent_id, unit, rdi, symbol, is_daily_value) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    [name, panel_name, parent_id || null, unit, rdi || null, symbol, is_daily_value],
+    'INSERT INTO ingredients (ingredient, parent_id, unit, rdi, is_daily_value) VALUES (?, ?, ?, ?, ?)',
+    [ingredient, parent_id || null, unit, rdi || null, is_daily_value],
     function (err) {
       if (err) return res.status(500).json({ error: 'Failed to add ingredient' });
       res.status(201).json({ id: this.lastID });
@@ -84,10 +107,10 @@ app.post('/api/ingredients', (req, res) => {
 });
 
 app.put('/api/ingredients/:id', (req, res) => {
-  const { name, panel_name, parent_id, unit, rdi, symbol, is_daily_value } = req.body;
+  const { ingredient, parent_id, unit, rdi, is_daily_value } = req.body;
   db.run(
-    'UPDATE ingredients SET name = ?, panel_name = ?, parent_id = ?, unit = ?, rdi = ?, symbol = ?, is_daily_value = ? WHERE id = ?',
-    [name, panel_name, parent_id || null, unit, rdi || null, symbol, is_daily_value, req.params.id],
+    'UPDATE ingredients SET ingredient = ?, parent_id = ?, unit = ?, rdi = ?, is_daily_value = ? WHERE id = ?',
+    [ingredient, parent_id || null, unit, rdi || null, is_daily_value, req.params.id],
     (err) => {
       if (err) return res.status(500).json({ error: 'Failed to update ingredient' });
       res.json({ message: 'Ingredient updated' });
@@ -100,6 +123,27 @@ app.delete('/api/ingredients/:id', (req, res) => {
     if (err) return res.status(500).json({ error: 'Failed to delete ingredient' });
     res.json({ message: 'Ingredient deleted' });
   });
+});
+
+app.get('/api/settings', (req, res) => {
+  db.all('SELECT key, value FROM settings', [], (err, rows) => {
+    if (err) return res.status(500).json({ error: 'Failed to load settings' });
+    const settings = rows.reduce((acc, row) => ({ ...acc, [row.key]: row.value }), {});
+    res.json(settings);
+  });
+});
+
+app.put('/api/settings', (req, res) => {
+  const { dailyValueSymbol, nonDailyValueSymbol } = req.body;
+  db.serialize(() => {
+    if (dailyValueSymbol) {
+      db.run('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', ['dailyValueSymbol', dailyValueSymbol]);
+    }
+    if (nonDailyValueSymbol) {
+      db.run('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', ['nonDailyValueSymbol', nonDailyValueSymbol]);
+    }
+  });
+  res.json({ message: 'Settings updated' });
 });
 
 app.post('/api/panels', (req, res) => {
