@@ -262,6 +262,7 @@
   
   <style>
     @media print {
+      /* svelte-ignore css-unused-selector */
       body *:not(#print-area, #print-area *) {
         display: none;
       }
