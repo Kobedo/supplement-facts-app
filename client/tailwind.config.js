@@ -1,8 +1,15 @@
 /** @type {import('tailwindcss').Config} */
 export default {
-    content: ['./src/**/*.{html,js,svelte}'],
-    theme: {
-      extend: {},
+  content: [
+    './index.html',
+    './src/**/*.{svelte,js,ts}',
+  ],
+  theme: {
+    extend: {
+      screens: {
+        'print': { 'raw': 'print' },
+      },
     },
-    plugins: [],
-  }
+  },
+  plugins: [],
+};
