@@ -96,6 +96,59 @@
   function printPanel() {
     window.print();
   }
+
+  function saveToXml() {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<supplement-facts>
+  <sku>${sku || ''}</sku>
+  <product-name>${productName || 'Product Name'}</product-name>
+  <serving-size>${servingSize || 'N/A'}</serving-size>
+  <servings-per-container>${servingsPerContainer || 'N/A'}</servings-per-container>
+  <daily-value-ingredients>
+    ${dailyValueIngredients
+      .filter(ing => ing.id)
+      .map(ing => {
+        const info = allIngredients.dailyValue.find(i => i.id === ing.id);
+        return `
+    <ingredient>
+      <name>${info.ingredient}</name>
+      <amount>${ing.amount || 0}</amount>
+      <unit>${info.unit}</unit>
+      <daily-value>${calculateDV(ing) !== null ? `${calculateDV(ing)}%` : nonDailyValueSymbol}</daily-value>
+    </ingredient>`;
+      })
+      .join('')}
+  </daily-value-ingredients>
+  <non-daily-value-ingredients>
+    ${nonDailyValueIngredients
+      .filter(ing => ing.id)
+      .map(ing => {
+        const info = allIngredients.nonDailyValue.find(i => i.id === ing.id);
+        return `
+    <ingredient>
+      <name>${info.ingredient}</name>
+      <amount>${ing.amount || 0}</amount>
+      <unit>${info.unit}</unit>
+    </ingredient>`;
+      })
+      .join('')}
+  </non-daily-value-ingredients>
+  ${otherIngredients ? `<other-ingredients>${otherIngredients}</other-ingredients>` : ''}
+  ${containsAllergens.length ? `<allergens>${containsAllergens.join(', ')}</allergens>` : ''}
+  ${showManufacturer && manufacturer ? `<manufacturer>${manufacturer}</manufacturer>` : ''}
+  ${showDistributor && distributor ? `<distributor>${distributor}</distributor>` : ''}
+</supplement-facts>`;
+
+    const blob = new Blob([xml], { type: 'application/xml' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${sku || 'supplement-facts'}.xml`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
 </script>
 
 {#if error}
@@ -195,6 +248,7 @@
         <div class="space-x-2">
           <button on:click={savePanel} class="bg-green-500 text-white p-2 rounded">Save Panel</button>
           <button on:click={printPanel} class="bg-gray-500 text-white p-2 rounded">Print</button>
+          <button on:click={saveToXml} class="bg-purple-500 text-white p-2 rounded">Save to XML</button>
         </div>
       </div>
     </div>
